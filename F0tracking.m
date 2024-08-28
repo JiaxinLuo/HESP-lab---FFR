@@ -1,0 +1,53 @@
+function [F0,correlation_scores,F0_tracking] = F0tracking(data,fs,window_size,step_size,start_time,end_time,lags,F0_lag_range,plotStatus,subplot_pos,F0_stimulus)
+%This function tracks F0 of waveform with the best autocorrelation lag
+
+% Initialize
+num_windows = floor((end_time - start_time - window_size) / step_size) + 1;
+time_vector = start_time + (0:num_windows-1) * step_size;
+F0_contour = zeros(1, num_windows);
+F0_strength = zeros(1, num_windows);
+F0 = zeros(1, num_windows);
+correlation_scores = zeros(num_windows, diff(lags)+1);
+% Process each window
+for i = 1:num_windows
+    % Define window limits
+    Win_time = time_vector(i);
+    win_start = round((Win_time - start_time) * fs) + 1;
+    win_end = win_start + window_size * fs - 1;
+    % Extract the segment
+    segment = data(win_start:win_end);
+    % Compute autocorrelation
+    [r, lags_vec] = xcorr(segment, max(lags), 'coeff');
+    % Extract relevant lags and find the peak    
+    F0_lags_idx = find(lags_vec >= min(F0_lag_range) & lags_vec <= max(F0_lag_range));
+    [peak_corr, idx] = max(r(F0_lags_idx));
+    correlation_scores_lags_vec = lags_vec(F0_lags_idx(idx));
+    
+    % Compute Autocorrelation scores within range
+    valid_lags = find(lags_vec >= min(lags) & lags_vec <= max(lags));
+    % Calculate F0
+    F0_contour(i) = correlation_scores_lags_vec;
+    F0_strength(i) = peak_corr;
+    F0(i) = lags_vec(F0_lags_idx(idx))/fs;
+    correlation_scores(i, :) = r(valid_lags);
+end
+%% Plotting
+if strcmp(plotStatus,'plot')
+    ax = subplot(313);
+    colororder({'r','b'})
+    imagesc((time_vector + window_size/2)*1000, lags_vec(valid_lags)/fs*1000, correlation_scores'); hold on; % add 0.020s for half window width
+%     xlim([0 250]);
+    ax.Position = ax.Position + subplot_pos;
+    plot((time_vector + window_size/2)*1000, F0_contour/fs*1000,'b-','LineWidth',3);
+    axis xy; set(gca, 'YDir','reverse');colormap(ax,"hot");
+%     h = colorbar; h.Label.String = 'Autocorrelation (r)'; h.Location = "northoutside";clim([-1 1])
+    xlabel('Time (ms)');
+    ylabel('Lag (ms)');
+%     F0_tracking = corr(F0_contour_stimulus', F0_contour'); % correlation between  stimulus and FFR F0 contours
+%         F0_tracking = 1 - rms(F0_stimulus'-F0_strength'); % RMS Error between stimulus and FFR F0 contours
+        F0_tracking = mean(abs(1./F0_stimulus - 1./F0)); % Difference between stimulus & FFR 1/F0 (Frequency in Hz) contours
+    title(['Autocorrelogram: F0 Accuracy = ', num2str(F0_tracking,'%.2f')]);
+%     xticks([0 125 250]);
+    
+end
+end
